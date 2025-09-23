@@ -1,0 +1,10 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore data
+data/raw/
+data/processed/
+
+# VS Code
+.vscode/
