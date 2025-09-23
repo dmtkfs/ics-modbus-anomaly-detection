@@ -7,7 +7,7 @@ This project is based on the CIC Modbus 2023 dataset and compares rule-based bas
 
 - **Task A** – Data preprocessing (PCAP → CSVs, cleaning, labeling)  
 - **Task B** – Heuristic detection (H1: write-rate spike, H2: rare/invalid function codes)  
-- **Task C (my focus)** – Supervised baselines (Logistic Regression, Random Forest, optional Isolation Forest) and LOAO evaluation across attack families  
+- **Task C** – Supervised baselines (Logistic Regression, Random Forest, optional Isolation Forest) and LOAO evaluation across attack families  
 
 ## Repository Structure
 
