@@ -1,0 +1,5 @@
+Attack Family,Count,Percent
+Compromised-scada,10780318,55.65
+Compromised-IED,6697030,34.57
+Benign,1048575,5.41
+External,844892,4.36
