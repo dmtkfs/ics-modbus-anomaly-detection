@@ -1,0 +1,20 @@
+dataset_path: data/processed/master.csv
+sha256: d35bd5964a5803ba9660e624ce0d7ab9390df38447ba2d45bfda5c64b7e34a63
+columns:
+- Time
+- Source
+- Destination
+- Length
+- Source Port
+- Destination Port
+- Function Code
+- Label
+- Attack Family
+- FunctionCodeNum
+label_encoding:
+  Attack: 1
+  Benign: 0
+families_order:
+- External
+- Compromised-IED
+- Compromised-SCADA

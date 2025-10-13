@@ -1,0 +1,7 @@
+- [ ] SHA-256 recorded in configs/dataset.yaml
+- [ ] 10-column schema matches
+- [ ] Label encoding Attack=1, Benign=0
+- [ ] Families order: External, Compromised-IED, Compromised-SCADA
+- [ ] Figures use repo matplotlibrc (DPI=300)
+- [ ] Metrics CSVs use 3-decimal precision + footer metadata
+- [ ] Random seed fixed at 42
