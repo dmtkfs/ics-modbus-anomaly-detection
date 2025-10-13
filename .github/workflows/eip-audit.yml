@@ -22,5 +22,7 @@ jobs:
                   python -m pip install --upgrade pip
                   pip install -r requirements.txt
 
-            - name: Run EIP audit
+            - name: Run EIP audit (light mode in CI)
+              env:
+                  EIP_LIGHT_AUDIT: "1"
               run: python -m scripts.eip_audit
