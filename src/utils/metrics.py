@@ -3,6 +3,7 @@ import csv
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 from sklearn.metrics import (
     precision_score,
     recall_score,
@@ -67,7 +68,7 @@ def write_metrics_csv(csv_path, row_dict, footer_meta=None):
 
 
 def plot_confusion_matrix(y_true, y_pred, title, out_path):
-    cm = confusion_matrix(y_true, y_pred, labels=[1, 0])
+    cm = confusion_matrix(y_true, y_pred, labels=[1, 0])  # your existing order
     fig, ax = plt.subplots(figsize=(5, 4))
     im = ax.imshow(cm, cmap="Blues")
     ax.set_title(title)
@@ -77,13 +78,18 @@ def plot_confusion_matrix(y_true, y_pred, title, out_path):
     ax.set_xticklabels(["Attack", "Benign"])
     ax.set_yticks([0, 1])
     ax.set_yticklabels(["Attack", "Benign"])
+
     total = cm.sum()
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            count = cm[i, j]
+            count = int(cm[i, j])
             pct = 100.0 * count / total if total else 0.0
-            ax.text(j, i, f"{count}\n({pct:.1f}%)", ha="center", va="center")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.text(j, i, f"{count:,}\n({pct:.1f}%)", ha="center", va="center")
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.formatter = FuncFormatter(lambda x, pos: f"{int(x):,}")
+    cbar.update_ticks()
+
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)

@@ -1,0 +1,33 @@
+model,precision,recall,f1,roc_auc,pr_auc,avg_loao_recall,notes
+LogReg,0.955,0.462,0.623,0.556,0.96,,Baseline; features from ml.yaml; SAGA; weighted
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T15:41:00Z
+LogReg,0.955,0.462,0.623,0.556,0.96,,Baseline; features from ml.yaml; SAGA; weighted; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T15:47:25Z
+LogReg,0.955,0.462,0.623,0.556,0.96,,Baseline; features from ml.yaml; SAGA; weighted; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T15:59:30+00:00
+RandomForest,0.962,0.305,0.463,0.56,0.961,,Baseline; features from ml.yaml; 100 trees; weighted; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T15:59:30+00:00
+IsolationForest,0.948,0.786,0.86,,,,Unsupervised; default threshold; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T15:59:30+00:00
+LogReg,0.955,0.462,0.623,0.556,0.96,,"Baseline; features from ml.yaml; LR(solver=saga, max_iter=1000, weighted=True, scaler=StandardScaler)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:34:26+00:00
+RandomForest,0.962,0.305,0.463,0.56,0.961,,"Baseline; features from ml.yaml; weighted; RF(n_estimators=50, max_samples=1000000, max_depth=20, min_samples_leaf=2, n_jobs=4, bootstrap=True)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:34:26+00:00
+IsolationForest,0.948,0.786,0.86,,,,Unsupervised; default threshold; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:34:26+00:00
+LogReg,0.955,0.462,0.623,0.556,0.96,,"Baseline; features from ml.yaml; LR(solver=saga, max_iter=1000, weighted=True, scaler=StandardScaler)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:48:34+00:00
+RandomForest,0.962,0.305,0.463,0.56,0.961,,"Baseline; features from ml.yaml; weighted; RF(n_estimators=50, max_samples=1000000, max_depth=20, min_samples_leaf=2, n_jobs=4, bootstrap=True)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:48:34+00:00
+IsolationForest,0.948,0.786,0.86,,,,Unsupervised; default threshold; light loader
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T16:48:34+00:00
+LogReg,0.955,0.462,0.623,0.556,0.96,,"Baseline; features from ml.yaml; LR(solver=saga, max_iter=1000, weighted=True, scaler=StandardScaler)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T17:09:35+00:00
+LogReg,0.955,0.462,0.623,0.556,0.96,,"Baseline; features from ml.yaml; LR(solver=saga, max_iter=1000, weighted=True, scaler=StandardScaler)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T17:14:16+00:00
+LogReg,0.955,0.462,0.623,0.556,0.96,,"Baseline; features from ml.yaml; LR(solver=saga, max_iter=1000, weighted=True, scaler=StandardScaler)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T17:18:40+00:00
+RandomForest,0.962,0.305,0.463,0.56,0.961,,"Baseline; features from ml.yaml; weighted; RF(n_estimators=50, max_samples=1000000, max_depth=20, min_samples_leaf=2, n_jobs=2, bootstrap=True)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T17:18:40+00:00
+IsolationForest,0.948,0.786,0.86,,,,"Unsupervised; IF(n_estimators=200, contamination=auto, max_samples=auto, bootstrap=False, n_jobs=2)"
+# dataset: master.csv | commit: local | seed: 42 | date: 2025-10-14T17:18:40+00:00
