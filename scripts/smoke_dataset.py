@@ -20,7 +20,7 @@ def main():
     print("[smoke] Loaded master.csv successfully")
     print(f"[smoke] Shape: {df.shape[0]:,} rows x {df.shape[1]} cols")
 
-    # Optional: show hashes (not required for enforcement)
+    # Show hashes
     ds_cfg = load_config("configs/dataset.yaml")
     expected = ds_cfg.get("sha256")
     actual = sha256_file(ds_cfg["dataset_path"])
