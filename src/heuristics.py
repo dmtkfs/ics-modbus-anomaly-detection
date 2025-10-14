@@ -24,7 +24,6 @@ class ModbusHeuristicsDetector:
         return df
     
     def compute_baselines(self, df):
-        """Step 2: Compute baseline statistics from benign traffic"""
         print("Step 2: Computing baselines...")
         benign_df = df[df['Label'] == 'Benign'].copy()
         
