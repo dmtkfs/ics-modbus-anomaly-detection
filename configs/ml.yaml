@@ -1,0 +1,12 @@
+random_seed: 42
+test_size: 0.2
+features:
+  - Length
+  - Source Port
+  - Destination Port
+  - FunctionCodeNum
+label_column: Label
+attack_family_column: Attack Family
+label_map:
+  Benign: 0
+  Attack: 1
