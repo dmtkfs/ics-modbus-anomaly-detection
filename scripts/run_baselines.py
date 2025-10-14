@@ -259,11 +259,6 @@ def main():
         f"bootstrap={if_params['bootstrap']}, "
         f"n_jobs={if_params['n_jobs']})"
     )
-    if_tag = (
-        f"ne{if_params['n_estimators']}_"
-        f"ms{str(if_params['max_samples']).replace('%','p')}_"
-        f"nj{if_params['n_jobs']}"
-    )
 
     m = compute_metrics(y_test, y_pred, y_score)
     write_metrics_csv(
