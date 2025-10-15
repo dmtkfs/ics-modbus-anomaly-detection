@@ -11,3 +11,15 @@ data/baselines/*.pkl
 
 # VS Code
 .vscode/
+
+# ML run artifacts
+results/ml/**
+!results/ml/.gitkeep
+
+figures/ml/**
+!figures/ml/.gitkeep
+
+# legacy outputs (ignore future runs)
+results/*.png
+results/*.csv
+figures/dataset_stats/*
