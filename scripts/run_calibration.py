@@ -1,26 +1,39 @@
+# Calibrates LogReg/RF with threshold sweeps, saves models + plots.
+# Outputs -> results/ml/feat-ml-calibration-loao/
+
 import argparse
-import datetime
+import csv
 import pathlib
+from datetime import datetime, UTC
+
+import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from src.utils.data_prep import load_config, check_schema, verify_checksum, sha256_file
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+
 from src.utils.ml_data_prep import load_ml_config, make_supervised_xy
+from src.utils.data_prep import load_config, check_schema, verify_checksum, sha256_file
+from src.ml.calibration import (
+    calibrate,
+)  # uses RF with n_jobs=1, max_samples subsampling
 
 
-def _ts():
-    return datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+def _ts() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
 
-def _light_load_with_family(ds_yaml_path: str, ml_cfg: dict) -> pd.DataFrame:
+def _light_load(ds_yaml_path: str, ml_cfg: dict) -> pd.DataFrame:
+    """Checksum + header schema + read only needed cols with tight dtypes."""
     ds_cfg = load_config(ds_yaml_path)
     csv_path = ds_cfg["dataset_path"]
+
     exp = ds_cfg.get("sha256")
     if exp and not verify_checksum(csv_path, exp):
-        raise ValueError(f"Checksum mismatch: {sha256_file(csv_path)} != {exp}")
+        actual = sha256_file(csv_path)
+        raise ValueError(f"Checksum mismatch.\nExpected: {exp}\nActual:   {actual}")
+
+    # header-only schema check
     check_schema(pd.read_csv(csv_path, nrows=0))
+
     needed = list(ml_cfg["features"]) + [
         ml_cfg["label_column"],
         ml_cfg["attack_family_column"],
@@ -43,58 +56,68 @@ def _light_load_with_family(ds_yaml_path: str, ml_cfg: dict) -> pd.DataFrame:
     )
 
 
-def _models(seed=42):
-    return {
-        "LogReg": Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(max_iter=1000, random_state=seed)),
-            ]
-        ),
-        "RandomForest": RandomForestClassifier(
-            n_estimators=100, max_depth=None, n_jobs=-1, random_state=seed
-        ),
-    }
+def stratified_cap(X: np.ndarray, y: np.ndarray, cap: int | None, seed: int = 42):
+    """Return up to `cap` rows, stratified by y (keeps class ratio)."""
+    n = len(y)
+    if cap is None or n <= cap:
+        return X, y
+    sss = StratifiedShuffleSplit(n_splits=1, train_size=cap, random_state=seed)
+    idx, _ = next(sss.split(X, y))
+    return X[idx], y[idx]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--out-prefix",
-        default=f"results/ml/feat-ml-calibration-loao/loao_{_ts()}",
-        help="Prefix for outputs (CSV, plots).",
+        default=f"results/ml/feat-ml-calibration-loao/calib_{_ts()}",
+        help="Prefix for outputs (CSV, models, plots).",
     )
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--family-col", default="Attack Family")
+    ap.add_argument("--val-split", type=float, default=0.2)
+    # caps to keep memory in check on 8–16 GB machines
+    ap.add_argument("--cap-train", type=int, default=2_000_000)
+    ap.add_argument("--cap-val", type=int, default=500_000)
     args = ap.parse_args()
 
     ml_cfg = load_ml_config("configs/ml.yaml")
-    df = _light_load_with_family("configs/dataset.yaml", ml_cfg)
+    df = _light_load("configs/dataset.yaml", ml_cfg)
+
     X_df, y_ser = make_supervised_xy(df, ml_cfg)
+    X = X_df.values.astype(np.float32, copy=False)
+    y = y_ser.values.astype(np.int8, copy=False)
 
-    families = sorted(df[args.family_col].unique())
-    results = []
-    for name, model in _models(args.seed).items():
-        for fam in families:
-            train_idx = df[args.family_col] != fam
-            test_idx = df[args.family_col] == fam
-            # ensure held-out has attacks; if not, skip
-            # (we assume LabelNum=1 is Attack after encoding in make_supervised_xy)
-            y_test_slice = y_ser.values[test_idx]
-            if not ((y_test_slice == 1).any()):
-                continue
-            model.fit(X_df.values[train_idx], y_ser.values[train_idx])
-            yhat = model.predict(X_df.values[test_idx])
-            tp = int(((y_test_slice == 1) & (yhat == 1)).sum())
-            fn = int(((y_test_slice == 1) & (yhat == 0)).sum())
-            rec = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
-            results.append({"family": fam, "model": name, "recall": rec})
+    Xtr, Xva, ytr, yva = train_test_split(
+        X, y, test_size=args.val_split, random_state=args.seed, stratify=y
+    )
 
-    out_dir = pathlib.Path(args.out_prefix).parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_csv = f"{args.out_prefix}_metrics.csv"
-    pd.DataFrame(results).to_csv(out_csv, index=False)
-    print(f"[loao] wrote {out_csv}")
+    # memory-safe caps (stratified)
+    Xtr, ytr = stratified_cap(Xtr, ytr, cap=args.cap_train, seed=args.seed)
+    Xva, yva = stratified_cap(Xva, yva, cap=args.cap_val, seed=args.seed)
+
+    pathlib.Path(args.out_prefix).parent.mkdir(parents=True, exist_ok=True)
+
+    rows = calibrate(Xtr, ytr, Xva, yva, args.out_prefix, seed=args.seed)
+
+    csv_path = f"{args.out_prefix}_metrics.csv"
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(
+            f,
+            fieldnames=[
+                "model",
+                "precision",
+                "recall",
+                "f1",
+                "roc_auc",
+                "pr_auc",
+                "threshold",
+                "date_utc",
+            ],
+        )
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    print(f"[calibration] wrote {csv_path}")
 
 
 if __name__ == "__main__":
