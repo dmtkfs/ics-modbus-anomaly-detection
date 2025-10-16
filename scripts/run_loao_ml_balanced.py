@@ -1,5 +1,5 @@
-# Phase II LOAO with balanced training (LogReg, RF) and benign-only IF.
-# Outputs -> results/ml/feat-ml-phase2/loao_*
+# Phase III LOAO with balanced training (LogReg, RF) and benign-only IF.
+# Outputs -> results/ml/feat-ml-phase3/loao_v2/loao_*
 
 import argparse
 import json
@@ -82,11 +82,22 @@ def _score_hist(scores: np.ndarray, thresh: float, title: str, path: str):
     plt.close(fig)
 
 
+def _compute_counts_and_metrics(y_true: np.ndarray, yhat: np.ndarray):
+    tp = int(((y_true == 1) & (yhat == 1)).sum())
+    fp = int(((y_true == 0) & (yhat == 1)).sum())
+    fn = int(((y_true == 1) & (yhat == 0)).sum())
+    tn = int(((y_true == 0) & (yhat == 0)).sum())
+    prec = 0.0 if (tp + fp) == 0 else tp / (tp + fp)
+    rec = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
+    fpr = 0.0 if (fp + tn) == 0 else fp / (fp + tn)
+    return tp, fp, fn, tn, prec, rec, fpr
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--out-prefix",
-        default=f"results/ml/feat-ml-phase2/loao_{_ts()}",
+        default=f"results/ml/feat-ml-phase3/loao_v2/loao_{_ts()}",
         help="Prefix for outputs (CSV).",
     )
     ap.add_argument(
@@ -95,6 +106,7 @@ def main():
     )
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--family-col", default="Attack Family")
+    ap.add_argument("--benign-label", default="Benign", help="Name of benign family.")
 
     # RF growing strategy
     ap.add_argument("--rf-trees", type=int, default=100)
@@ -130,20 +142,25 @@ def main():
         "--target-recall",
         type=float,
         default=None,
-        help="If set, sweep thresholds on the TRAIN side to achieve recall >= target.",
+        help="If set, retune threshold on TRAIN split to achieve recall >= target "
+        "(also applies min-precision/max-fpr constraints if provided).",
+    )
+    ap.add_argument(
+        "--min-precision",
+        type=float,
+        default=None,
+        help="Minimum precision constraint when retuning threshold.",
+    )
+    ap.add_argument(
+        "--max-fpr",
+        type=float,
+        default=None,
+        help="Maximum false-positive rate constraint when retuning threshold.",
     )
 
     # Plots
-    ap.add_argument(
-        "--write-tpfn",
-        action="store_true",
-        help="Write TP/FN bar charts per family instead of CMs.",
-    )
-    ap.add_argument(
-        "--write-hist",
-        action="store_true",
-        help="Write score histograms with threshold line for LR/RF per family.",
-    )
+    ap.add_argument("--write-tpfn", action="store_true")
+    ap.add_argument("--write-hist", action="store_true")
 
     args = ap.parse_args()
 
@@ -162,17 +179,13 @@ def main():
     y_all = y_ser.values.astype(np.int8, copy=False)
     fam = df[args.family_col].values
 
-    # Optionally pull calibrated thresholds
-    if args.use_calibrated_througholds if False else False:
-        pass  # dead branch to keep linters quiet if user toggles flags later
-
+    # Optionally pull calibrated thresholds (as starting points)
     if args.use_calibrated_thresholds:
         if not args.calib_prefix:
             raise SystemExit("--use-calibrated-thresholds requires --calib-prefix")
         try:
             with open(f"{args.calib_prefix}_RandomForest.json", "r") as f:
                 rf_meta = json.load(f)
-            args.rf_thres = rf_meta.get("chosen_threshold", args.rf_thres)  # typo guard
             args.rf_thresh = rf_meta.get("chosen_threshold", args.rf_thresh)
         except FileNotFoundError:
             print(
@@ -187,6 +200,43 @@ def main():
                 "[warn] LR calibration JSON not found; using --lr-thresh as provided."
             )
 
+    def _retune_threshold(scores: np.ndarray, y: np.ndarray, start_t=0.0):
+        """Find smallest t meeting recall≥target_recall AND optional constraints."""
+        if (
+            args.target_recall is None
+            and args.min_precision is None
+            and args.max_fpr is None
+        ):
+            return None
+        ts = np.linspace(start_t, 1.0, 401)
+        chosen = None
+        best_f1, best_t = -1.0, ts[0]
+        for t in ts:
+            yhat = (scores >= t).astype(np.int8)
+            tp = int(((y == 1) & (yhat == 1)).sum())
+            fp = int(((y == 0) & (yhat == 1)).sum())
+            fn = int(((y == 1) & (yhat == 0)).sum())
+            tn = int(((y == 0) & (yhat == 0)).sum())
+            prec = 0.0 if (tp + fp) == 0 else tp / (tp + fp)
+            rec = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
+            fpr = 0.0 if (fp + tn) == 0 else fp / (fp + tn)
+
+            feasible = True
+            if args.target_recall is not None:
+                feasible &= rec >= args.target_recall
+            if args.min_precision is not None:
+                feasible &= prec >= args.min_precision
+            if args.max_fpr is not None:
+                feasible &= fpr <= args.max_fpr
+            if feasible and chosen is None:
+                chosen = float(t)
+
+            f1 = 0.0 if (prec + rec) == 0 else 2 * prec * rec / (prec + rec)
+            if feasible and f1 > best_f1:
+                best_f1, best_t = f1, float(t)
+
+        return chosen if chosen is not None else best_t
+
     families = sorted(np.unique(fam))
     rows = []
 
@@ -194,32 +244,29 @@ def main():
     pathlib.Path(args.out_prefix).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(args.fig_prefix).parent.mkdir(parents=True, exist_ok=True)
 
+    benign_label = args.benign_label
+
     for held in families:
+        if held == benign_label:
+            print(f"[LOAO] held-out family: {held}")
+            print("  -> skipping: this is the benign family.")
+            continue
+
         print(f"[LOAO] held-out family: {held}")
+
+        # Test = held-out attacks + ALL benign
+        test_idx = (fam == held) | (fam == benign_label)
+        # Train = ALL rows except held-out attack family (includes benign)
         train_idx = fam != held
-        test_idx = fam == held
 
         X_tr = X_all[train_idx]
         y_tr = y_all[train_idx]
         X_te = X_all[test_idx]
         y_te = y_all[test_idx]
 
-        if not (y_te == 1).any():
-            print("  -> no Attack rows in held-out split; skipping.")
+        if not ((fam == held) & (y_all == 1)).any():
+            print("  -> no Attack rows in held-out family; skipping.")
             continue
-
-        # Optional threshold retuning to a target recall (using TRAIN side only)
-        def fit_thresh_from_train(scores: np.ndarray, y: np.ndarray, start_t=0.0):
-            if args.target_recall is None:
-                return None
-            ts = np.linspace(start_t, 1.0, 401)
-            for t in ts:
-                rec = (((scores >= t).astype(np.int8) & (y == 1)).sum()) / max(
-                    1, (y == 1).sum()
-                )
-                if rec >= args.target_recall:
-                    return float(t)
-            return float(ts[-1])
 
         # ===== Logistic Regression (balanced training) =====
         X_lr, y_lr = make_balanced(X_tr, y_tr, seed=args.seed)
@@ -241,21 +288,33 @@ def main():
         lr.fit(X_lr, y_lr)
         lr_scores_tr = lr.predict_proba(X_lr)[:, 1]
         lr_thresh = args.lr_thresh
-        if args.target_recall is not None:
-            lr_thresh = fit_thresh_from_train(lr_scores_tr, y_lr) or lr_thresh
+        tuned_lr = _retune_threshold(lr_scores_tr, y_lr, start_t=0.0)
+        if tuned_lr is not None:
+            lr_thresh = tuned_lr
         lr_scores_te = lr.predict_proba(X_te)[:, 1]
         yhat_lr = (lr_scores_te >= lr_thresh).astype(np.int8)
 
-        tp = int(((y_te == 1) & (yhat_lr == 1)).sum())
-        fn = int(((y_te == 1) & (yhat_lr == 0)).sum())
-        rec_lr = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
-        rows.append({"family": held, "model": "LogReg(balanced)", "recall": rec_lr})
+        tp, fp, fn, tn, prec, rec, fpr = _compute_counts_and_metrics(y_te, yhat_lr)
+        rows.append(
+            {
+                "family": held,
+                "model": "LogReg(balanced)",
+                "precision": prec,
+                "recall": rec,
+                "fpr": fpr,
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
+                "threshold": float(lr_thresh),
+            }
+        )
         run_tag = args.fig_prefix  # already run-scoped
         if args.write_tpfn:
             _tpfn_bar(
                 tp,
                 fn,
-                f"Attack-only TP/FN — LR — {held}",
+                f"TP/FN — LR — {held}",
                 f"{run_tag}_tpfn_lr_{str(held).replace(' ','_')}.png",
             )
         if args.write_hist:
@@ -267,15 +326,20 @@ def main():
             )
 
         # ===== Random Forest (balanced training, grown in passes) =====
-        # stable weights from full (pre-balance) y_tr
         cw = stable_class_weight(y_tr)
         X_rf, y_rf = make_balanced(X_tr, y_tr, seed=args.seed)
+        eff_max_samples = int(min(args.rf_max_samples, len(y_rf)))
+        if eff_max_samples < args.rf_max_samples:
+            print(
+                f"  [RF] lower max_samples_per_tree {args.rf_max_samples:,} -> {eff_max_samples:,} "
+                f"(n_train_bal={len(y_rf):,})"
+            )
         rf_cfg = ForestGrowConfig(
             total_trees=args.rf_trees,
             trees_per_pass=args.rf_trees_per_pass,
             max_depth=20,
             min_samples_leaf=2,
-            max_samples_per_tree=args.rf_max_samples,
+            max_samples_per_tree=eff_max_samples,
             class_weight=cw,
             n_jobs=args.rf_n_jobs,
             random_state=args.seed,
@@ -289,23 +353,33 @@ def main():
 
         rf_scores_tr = rf.predict_proba(X_rf)[:, 1]
         rf_thresh = args.rf_thresh
-        if args.target_recall is not None:
-            rf_thresh = fit_thresh_from_train(rf_scores_tr, y_rf) or rf_thresh
+        tuned_rf = _retune_threshold(rf_scores_tr, y_rf, start_t=0.0)
+        if tuned_rf is not None:
+            rf_thresh = tuned_rf
 
         rf_scores_te = rf.predict_proba(X_te)[:, 1]
         yhat_rf = (rf_scores_te >= rf_thresh).astype(np.int8)
 
-        tp = int(((y_te == 1) & (yhat_rf == 1)).sum())
-        fn = int(((y_te == 1) & (yhat_rf == 0)).sum())
-        rec_rf = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
+        tp, fp, fn, tn, prec, rec, fpr = _compute_counts_and_metrics(y_te, yhat_rf)
         rows.append(
-            {"family": held, "model": "RandomForest(balanced,grown)", "recall": rec_rf}
+            {
+                "family": held,
+                "model": "RandomForest(balanced,grown)",
+                "precision": prec,
+                "recall": rec,
+                "fpr": fpr,
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
+                "threshold": float(rf_thresh),
+            }
         )
         if args.write_tpfn:
             _tpfn_bar(
                 tp,
                 fn,
-                f"Attack-only TP/FN — RF — {held}",
+                f"TP/FN — RF — {held}",
                 f"{run_tag}_tpfn_rf_{str(held).replace(' ','_')}.png",
             )
         if args.write_hist:
@@ -339,46 +413,56 @@ def main():
 
             iforest = grow_iforest(X_benign, if_cfg, sampler=benign_sampler)
 
-            # IF: -1 => anomaly => attack; no calibrated threshold here
+            # IF: predict = -1 => anomaly => attack (no threshold value)
             yhat_if = (iforest.predict(X_te) == -1).astype(np.int8)
-            tp = int(((y_te == 1) & (yhat_if == 1)).sum())
-            fn = int(((y_te == 1) & (yhat_if == 0)).sum())
-            rec_if = 0.0 if (tp + fn) == 0 else tp / (tp + fn)
+            tp, fp, fn, tn, prec, rec, fpr = _compute_counts_and_metrics(y_te, yhat_if)
             rows.append(
                 {
                     "family": held,
                     "model": "IsolationForest(benign-only,grown)",
-                    "recall": rec_if,
+                    "precision": prec,
+                    "recall": rec,
+                    "fpr": fpr,
+                    "tp": tp,
+                    "fp": fp,
+                    "fn": fn,
+                    "tn": tn,
+                    "threshold": None,
                 }
             )
             if args.write_tpfn:
                 _tpfn_bar(
                     tp,
                     fn,
-                    f"Attack-only TP/FN — IF — {held}",
+                    f"TP/FN — IF — {held}",
                     f"{run_tag}_tpfn_if_{str(held).replace(' ','_')}.png",
                 )
 
+    # Write CSV (now includes precision/recall/FPR and counts)
     out_csv = f"{args.out_prefix}_metrics.csv"
     pathlib.Path(out_csv).parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_csv, index=False)
     print(f"[loao-balanced] wrote {out_csv}")
 
-    # --- Bar chart from LOAO metrics (scoped to run via fig-prefix) ---
+    # --- Bar chart (recall only, for a quick glance) ---
     df_rows = pd.DataFrame(rows)
-    pv = df_rows.pivot(index="family", columns="model", values="recall").sort_index()
-
-    figpath = f"{args.fig_prefix}_loao_bars.png"
-    ax = pv.plot(kind="bar", figsize=(10, 4))
-    ax.set_ylabel("Recall")
-    ax.set_xlabel("Attack Family")
-    ax.set_title("LOAO Recall by Model (Balanced/Grown)")
-    ax.legend(title="Model", bbox_to_anchor=(1.02, 1), loc="upper left")
-    fig = ax.get_figure()
-    fig.tight_layout()
-    fig.savefig(figpath, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[loao-balanced] bar chart: {figpath}")
+    try:
+        pv = df_rows.pivot(
+            index="family", columns="model", values="recall"
+        ).sort_index()
+        figpath = f"{args.fig_prefix}_loao_bars.png"
+        ax = pv.plot(kind="bar", figsize=(10, 4))
+        ax.set_ylabel("Recall")
+        ax.set_xlabel("Attack Family")
+        ax.set_title("LOAO Recall by Model (Balanced/Grown)")
+        ax.legend(title="Model", bbox_to_anchor=(1.02, 1), loc="upper left")
+        fig = ax.get_figure()
+        fig.tight_layout()
+        fig.savefig(figpath, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[loao-balanced] bar chart: {figpath}")
+    except Exception as e:
+        print(f"[loao-balanced] bar chart skipped: {e}")
 
 
 if __name__ == "__main__":
