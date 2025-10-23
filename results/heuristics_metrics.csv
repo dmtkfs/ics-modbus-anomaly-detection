@@ -1,0 +1,4 @@
+model,precision,recall,f1,roc_auc,pr_auc,avg_loao_recall,notes
+H1_WriteSpike,0.948,0.866,0.905,,,,heuristics
+H2_VariantF,1.0,0.306,0.469,,,,heuristics
+H1_H2_Combined,0.948,0.866,0.905,,,,heuristics
