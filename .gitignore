@@ -23,3 +23,10 @@ figures/ml/**
 results/*.png
 results/*.csv
 figures/dataset_stats/*
+
+# Heuristics outputs 
+figures/heuristics/*
+!figures/heuristics/.gitkeep
+
+# Results written by heuristics
+results/heuristics_*.csv
