@@ -67,7 +67,14 @@ if __name__ == "__main__":
         ]
     )
     rf = RandomForestClassifier(
-        n_estimators=100, max_depth=None, n_jobs=-1, random_state=42
+        n_estimators=150,  # fewer trees to reduce memory/time
+        max_depth=20,  # bound tree size
+        min_samples_leaf=2,  # reduce overfitting + memory
+        bootstrap=True,
+        max_samples=1_000_000,  # important cap to avoid giant bincount arrays
+        n_jobs=1,  # avoid multi-proc RAM spikes
+        class_weight="balanced",  # consistent with imbalanced data
+        random_state=42,
     )
 
     for name, model in [("LogReg", logreg), ("RandomForest", rf)]:
