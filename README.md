@@ -1,213 +1,196 @@
 # ICS Modbus Anomaly Detection
 ![EIP Audit](https://github.com/dmtkfs/ics-modbus-anomaly-detection/actions/workflows/eip-audit.yml/badge.svg)
 
-This project implements **baseline anomaly detection for Industrial Control System (ICS) Modbus traffic**, combining **rule-based heuristics** and **supervised machine-learning baselines** under a unified **Evaluation Integrity Protocol (EIP)** for reproducibility and fair comparison.
 
-The work is based on the **CIC Modbus 2023 dataset**, and evaluates both detection families: **Heuristics** (domain logic) and **ML models** (data-driven) under the same dataset, metrics and evaluation procedures.
+**Baseline intrusion-detection framework for Industrial Control Systems (ICS) using Modbus/TCP traffic.**
+Implements two complementary detection layers — **rule-based heuristics** and **machine learning baselines** — unified by a strict **Evaluation Integrity Protocol (EIP)** that guarantees reproducibility, dataset consistency and comparable metrics.
 
-## Project Overview
+## Overview
 
-### Goals
-- Detect anomalous Modbus traffic using two complementary approaches:
-  - **Heuristic detectors**
-    - **H1 – Write-Rate Spike:** detects sudden surges in write operations.
-    - **H2 – Function-Code Anomalies:** detects abnormal protocol behavior.
-  - **Machine-Learning baselines**
-    - Logistic Regression
-    - Random Forest
-    - Unsupervised Isolation Forest (optional)
-- Evaluate both heuristics and ML models using a **Leave-One-Attack-Out (LOAO)** methodology across attack families.
-- Maintain full cross-team integrity using our **Evaluation Integrity Protocol (EIP)**, a fixed standard for dataset versioning, metrics, figure formats and random seeds.
+This project analyzes the **CIC Modbus 2023 dataset** to detect anomalous behavior in industrial network traffic.
+
+* **Heuristic detectors** provide interpretable, lightweight rule checks
+* **Machine learning models** (Logistic Regression, Random Forest, Isolation Forest) provide adaptive statistical detection
+* Both layers share the same dataset, schema, metrics and seed under the **EIP** standard
+* A **PowerShell script** automates end-to-end evaluation for reproducibility
 
 ## Repository Structure
 
 ```
-
-ICS-MODBUS-ANOMALY-DETECTION/
+ics-modbus-anomaly-detection/
 │
 ├── .github/
 │   └── workflows/
-│       └── eip-audit.yml         # CI gate: runs EIP audit on push/PR
+│       └── eip-audit.yml           # GitHub Actions CI audit enforcing EIP
 │
 ├── configs/
-│   └── dataset.yaml              # Dataset path, SHA-256, schema, label map, family order
-│
-├── data/
-│   ├── raw/                      # Original CIC Modbus 2023 PCAPs [not committed]
-│   └── processed/
-│       └── master.csv            # Merged and labeled master dataset (attack + benign) [not committed]
+│   ├── dataset.yaml                # Dataset path, SHA-256, schema, label map
+│   └── ml.yaml                     # ML configuration (features, labels, seed)
 │
 ├── docs/
-│   ├── EIP_Checklist.md          # Tick-before-merge reproducibility checklist
-│   └── Evaluation_Integrity_Protocol.md  # Definition and compliance description
+│   ├── appendix_ml_final_run.md    # Final Phase III ML notes (artifacts & metrics)
+│   ├── EIP_Checklist.md            # Tick-before-merge reproducibility checklist
+│   └── Evaluation_Integrity_Protocol.md  # Full EIP specification
 │
-├── figures/                      # Auto-saved plots and metric figures
+├── figures/
+│   └── ml/
+│       └── .gitkeep                # Placeholder (figures generated locally)
+│
+├── results/
+│   └── ml/
+│       └── .gitkeep                # Placeholder (CSV results generated locally)
 │
 ├── scripts/
 │   ├── __init__.py
-│   ├── compute_checksum.py       # Pins dataset SHA-256 in configs/dataset.yaml
-│   ├── eip_audit.py              # Verifies schema, checksum, label encoding, matplotlibrc
-│   ├── proc_dataset_audit.py     # Dataset-level preprocessing audit (independent)
-│   ├── run_baselines.py          # Runs ML baselines (LogReg, RF) and writes results CSV
-│   └── run_loao.py               # LOAO evaluation across attack families
+│   ├── aggregate_phase3_metrics.py # Aggregates calibration + LOAO outputs
+│   ├── compute_checksum.py         # Computes and pins dataset SHA-256
+│   ├── eip_audit.py                # Validates schema, checksum, matplotlibrc
+│   ├── proc_dataset_audit.py       # Optional preprocessing audit
+│   ├── run_baselines.py            # Trains LR/RF/IF baselines (80/20 split)
+│   ├── run_calibration.py          # Legacy calibrator (unbalanced)
+│   ├── run_calibration_balanced.py # Final constrained calibration (balanced)
+│   ├── run_final_ml.ps1            # Full PowerShell pipeline (audit→train→LOAO→aggregate)
+│   ├── run_loao.py                 # Simple LOAO prototype
+│   ├── run_loao_ml.py              # ML-only LOAO (legacy)
+│   ├── run_loao_ml_balanced.py     # Balanced LOAO for LR/RF/IF (Phase III)
+│   ├── smoke_dataset.py            # Dataset presence & schema sanity check
+│   └── smoke_heuristics.py         # Quick heuristics dry-run on subset
 │
 ├── src/
+│   ├── ml/
+│   │   ├── balanced.py             # Class balancing and tree growth logic
+│   │   └── calibration.py          # Calibration sweep & constraint selection
 │   ├── utils/
-│   │   ├── data_prep.py          # Config/dataset loaders, checksum, schema checks
-│   │   ├── metrics.py            # Shared metric computation, 3-decimal CSV writer, plotting
-│   │   ├── plot_utils.py         # Standardized figure naming helpers
-│   │   └── __init__.py
-│   ├── heuristics.py             # (planned) H1/H2 rule-based detectors
-│   ├── ml_baselines.py           # (planned) Model definitions separate from scripts
-│   ├── loao.py                   # (planned) reusable LOAO routines
-│   └── data_processing.py        # (planned) preprocessing utilities for dataset refinement
+│   │   ├── data_prep.py            # Dataset/config loaders, checksum utilities
+│   │   ├── metrics.py              # Metric computation & CSV writer
+│   │   ├── ml_data_prep.py         # ML-specific data preparation helpers
+│   │   └── plot_utils.py           # Standardized figure styling
+│   ├── heuristics.py               # Implements H1/H2F detectors
+│   └── __init__.py
 │
-├── matplotlibrc                  # Global plotting style (DPI, fonts, sizes)
-├── requirements.txt              # Stable dependencies (latest verified releases)
-├── LICENSE
+├── .gitignore                      # Excludes data/, cache, and local artifacts
+├── LICENSE                         # Open license declaration
+├── matplotlibrc                     # Unified plotting style (DPI, fonts)
+├── requirements.txt                 # Stable dependencies (NumPy, Pandas, etc.)
 └── README.md
-
-````
-
-## Stable Dependency Versions
-
-All packages are pinned to the **latest stable (non-beta)** versions as of October 2025:
-
-| Package | Version | Purpose |
-|----------|----------|----------|
-| `numpy` | **2.3.3** | numeric array operations |
-| `pandas` | **2.3.3** | dataset loading and manipulation |
-| `scikit-learn` | **1.7.2** | ML algorithms and metrics |
-| `matplotlib` | **3.10.7** | plotting |
-| `PyYAML` | **6.0.3** | YAML configuration parsing |
+```
 
 ## Evaluation Integrity Protocol (EIP)
 
-The **EIP** defines reproducibility and comparability standards across both teams (Heuristics & ML). It enforces:
+EIP enforces **reproducibility and comparability** across all runs.
 
-| Category | Fixed Standard |
-|-----------|----------------|
-| **Dataset identity** | `data/processed/master.csv` pinned via SHA-256 in `configs/dataset.yaml` |
-| **Schema** | 10 required columns `[Time, Source, Destination, Length, Ports, FunctionCode, Label, AttackFamily, FunctionCodeNum]` |
-| **Labels** | `Attack=1`, `Benign=0` |
-| **Families order** | `[External, Compromised-IED, Compromised-SCADA]` |
-| **Seed** | `random_state=42` |
-| **Metrics** | Precision, Recall, F1; ROC-AUC and PR-AUC (for ML) |
-| **Rounding** | 3-decimal precision across all CSV outputs |
-| **Figures** | DPI = 300, unified font sizes per `matplotlibrc` |
-| **Results format** | All metrics written via `src/utils/metrics.write_metrics_csv()` |
-| **Audit gate** | `python -m scripts.eip_audit` must output **“ALL GREEN”** before commits/merges |
+| Standard             | Description                                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dataset identity** | `data/processed/master.csv` pinned via SHA-256 in `configs/dataset.yaml`                                                                |
+| **Schema**           | 10 columns – `[Time, Source, Destination, Length, Source Port, Destination Port, Function Code, Label, Attack Family, FunctionCodeNum]` |
+| **Labels**           | `Attack = 1`, `Benign = 0`                                                                                                              |
+| **Families order**   | `[External, Compromised-IED, Compromised-SCADA]`                                                                                        |
+| **Random seed**      | 42                                                                                                                                      |
+| **Metrics**          | Precision, Recall, F1 (+ ROC-AUC / PR-AUC for ML)                                                                                       |
+| **Figures**          | DPI 300, standard fonts per `matplotlibrc`                                                                                              |
+| **Audit**            | `python -m scripts.eip_audit` → **“ALL GREEN”** before merge                                                                            |
 
-## Workflow Summary
+A lightweight version of this audit runs automatically in **GitHub Actions** for every push or pull request.
 
-### 1. Compute dataset checksum
-```bash
-python -m scripts.compute_checksum
-````
+## How to Run
 
-Writes the SHA-256 of `master.csv` into `configs/dataset.yaml`.
-
-### 2. Run EIP audit
+### 1. Dataset Checksum & Audit
 
 ```bash
-python -m scripts.eip_audit
+python -m scripts.compute_checksum     # write SHA-256 into configs/dataset.yaml
+python -m scripts.eip_audit            # full integrity check
 ```
 
-Verifies schema, checksum, label encoding, and matplotlib configuration.
+### 2. Heuristic Detection
 
-### 3. Run baseline ML models
+```bash
+python -m src.heuristics
+```
+
+Generates:
+
+* `results/heuristics_metrics.csv`
+* `figures/heuristics/confusion_combined.png`
+* `figures/heuristics/performance_comparison.png`
+* `figures/heuristics/recall_by_attack_family.png`
+
+Executes H1 (Write Rate Spike) and H2 (Function Code + Role Anomaly) in ~5 minutes on standard CPU.
+
+### 3. Machine-Learning Baselines
+
+Train baseline models (80/20 split):
 
 ```bash
 python -m scripts.run_baselines
 ```
 
-Trains Logistic Regression and Random Forest (optional: Isolation Forest) and appends standardized metric rows to `results/metrics.csv`.
-
-### 4. Run Leave-One-Attack-Out (LOAO)
+Calibrate thresholds and LOAO (Leave-One-Attack-Out) evaluation:
 
 ```bash
-python -m scripts.run_loao
+python -m scripts.run_calibration_balanced
+python -m scripts.run_loao_ml_balanced
+python -m scripts.aggregate_phase3_metrics
 ```
 
-Performs LOAO evaluation per attack family, computing **average recall** per model.
+### 4. Fully Automated ML Pipeline (PowerShell)
 
-### 5. Verify continuous-integration audit (GitHub Actions)
+Run every step under EIP control:
 
-Every push or pull request automatically runs the same audit via
-`.github/workflows/eip-audit.yml`.
-View the result under the **Actions** tab on GitHub.
+```powershell
+.\run_final_ml.ps1
+```
 
-## CI: EIP Audit (Light in CI, Full Locally)
+Performs:
+Audit → Baselines → Balanced calibration → LOAO (simple + balanced) → Aggregate → Light audit
+Outputs stored in `results/ml/final_<timestamp>/` and `figures/ml/final_<timestamp>/`.
 
-This repository uses a **GitHub Actions workflow** (`.github/workflows/eip-audit.yml`) to enforce EIP integrity.
+## Key Findings (Shortened)
 
-**What CI checks (light mode):**
+| Detector                               | Precision | Recall | F1    | Notes                               |
+| -------------------------------------- | --------- | ------ | ----- | ----------------------------------- |
+| **H1: Write-Rate Spike**              | 0.948     | 0.866  | 0.905 | Detects write surges                |
+| **H2: Function-Code & Role Anomaly** | 1.000     | 0.306  | 0.469 | Flags mixed-role clients            |
+| **Combined (H1 ∨ H2)**                | 0.948     | 0.866  | 0.905 | Balanced precision-recall           |
+| **Logistic Regression (80/20)**        | 0.955     | 0.462  | 0.623 | Supervised baseline                |
+| **Random Forest (80/20)**              | 0.962     | 0.305  | 0.463 | Tree-based baseline                 |
+| **Isolation Forest (unsupervised)**    | 0.948     | 0.786  | 0.860 | Generalizes best to unseen families |
 
-* `configs/dataset.yaml` exists and includes:
+**Interpretation:** Heuristics excel in precision and clarity, ML extends coverage to novel patterns. Both combined offer a reproducible baseline for ICS intrusion detection.
 
-  * `dataset_path`, **non-empty** `sha256`, `columns`, `label_encoding`, `families_order`
-  * `label_encoding` must include both `Attack` and `Benign`
-* `matplotlibrc` exists in the repo root
+## Continuous Integration (CI)
 
-**What CI skips:**
-Loading `data/processed/master.csv` and schema validation (because the dataset is not stored in the repo).
+GitHub Actions workflow `.github/workflows/eip-audit.yml` performs a **light EIP audit** on each push/PR:
 
-**Why “light” mode?**
-The dataset is too large for the repo. CI still validates all **static** EIP guarantees; **full** checks run locally.
+* verifies config files, schema fields, and matplotlib setup
+* ensures dataset checksum present
+* blocks merge if audit fails
 
-**Run the full audit locally:**
+Full audits can be run locally with:
 
 ```bash
-python -m scripts.eip_audit
-# expects data/processed/master.csv to exist locally
+python -m scripts.eip_audit --full
 ```
-
-**Force light mode locally (optional):**
-
-```bash
-EIP_LIGHT_AUDIT=1 python -m scripts.eip_audit
-```
-
-**Where to see results:**
-GitHub → **Actions** → **EIP Audit** (each push/PR shows pass/fail).
-
-## Output Convention
-
-* **Metrics file:** `results/metrics.csv`
-  Columns → `model, precision, recall, f1, roc_auc, pr_auc, avg_loao_recall, notes`
-* **Figures:** saved under `figures/<team>/<model_metric>.png`
-* **Footer metadata (auto-appended):** dataset name, commit hash, seed, UTC date
-
-## How We Merge Changes
-
-1. Create a feature branch (e.g., `feat/h1-heuristic`, `exp/rf-tuning`).
-2. Push and open a Pull Request (PR) into `main`.
-3. Ensure **EIP Audit** (GitHub Actions) passes.
-4. Merge the PR (branch protection enforces the check).
-5. Direct pushes to `main` are disabled for consistency.
-
----
 
 ## Dataset Reference
 
-The project uses the **[CIC Modbus 2023 dataset](https://www.unb.ca/cic/datasets/modbus-2023.html)**.
-Because of their large size, raw PCAPs and the `master.csv` are excluded from the repo.
-To reproduce results:
+Canadian Institute for Cybersecurity (CIC).
+*Modbus 2023 Dataset.*
+[https://www.unb.ca/cic/datasets/modbus-2023.html](https://www.unb.ca/cic/datasets/modbus-2023.html)
 
-1. Place PCAPs under `data/raw/Modbus Dataset/`
-2. Process them into CSVs with Modbus filter (`tcp.port == 502`)
-3. Merge and label them into `data/processed/master.csv`
-4. Compute checksum and rerun EIP audit
-
-## Future Work
-
-* Implement the heuristic detectors (H1 & H2) directly in `src/heuristics.py`
-* Add visualization scripts for heuristic vs. ML comparison
-* Integrate MITRE ATT&CK-for-ICS mapping to figures/report (`docs/mitre_mapping.md`)
-* Extend EIP CI to include metric-threshold enforcement
+Raw PCAPs and the merged `master.csv` are excluded from the repo for size and license reasons.
 
 ## Acknowledgements
 
-This work is part of a project for **INSE 6640 Smart Grids and Control System Security**, focusing on integrity and anomaly detection in ICS Modbus environments.
-All processing, baselines and evaluations are performed offline following the EIP reproducibility protocol.
+Developed as part of **INSE 6640 - Smart Grids and Control System Security**, Concordia University (2025).
 
+All processing and evaluations follow the Evaluation Integrity Protocol (EIP) to ensure reproducibility and cross-phase consistency.
+
+The complete final report and executive summary are available upon request.
+
+## How to Cite
+
+If you use this repository or its evaluation framework in academic or research work, please cite it as:
+
+> **Baseline Anomaly Detection for ICS Modbus Traffic: Heuristics vs Machine Learning under Leave-One-Attack-Out Evaluation**, 
+> *Concordia University - INSE 6640: Smart Grids and Control System Security*, 2025. 
+> Available at: [https://github.com/dmtkfs/ics-modbus-anomaly-detection](https://github.com/dmtkfs/ics-modbus-anomaly-detection)
